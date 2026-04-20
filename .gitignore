@@ -1,0 +1,17 @@
+.env
+.env.local
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Backend local data
+backend/data/
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+
+# Logs
+*.log
