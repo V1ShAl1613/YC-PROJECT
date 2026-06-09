@@ -3,6 +3,10 @@ Verification-First Legal AI Agent — FastAPI Backend
 Production-grade legal research assistant with zero hallucination policy.
 """
 
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
