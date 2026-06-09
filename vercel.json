@@ -8,7 +8,9 @@
     },
     "backend": {
       "root": "backend",
-      "routePrefix": "/_/backend"
+      "routePrefix": "/_/backend",
+      "runtime": "@vercel/python",
+      "entrypoint": "main.py"
     }
   }
 }
