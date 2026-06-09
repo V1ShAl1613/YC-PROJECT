@@ -1,5 +1,16 @@
 {
   "version": 2,
+  "experimentalServices": {
+    "frontend": {
+      "root": "frontend",
+      "routePrefix": "/",
+      "framework": "nextjs"
+    },
+    "backend": {
+      "root": "backend",
+      "routePrefix": "/_/backend"
+    }
+  },
   "builds": [
     {
       "src": "backend/main.py",
