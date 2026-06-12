@@ -102,42 +102,305 @@ function AgentsPanel() {
   );
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 function SearchPanel() {
+  const [query, setQuery] = useState("");
+  const [court, setCourt] = useState("");
+  const [yearFrom, setYearFrom] = useState("");
+  const [yearTo, setYearTo] = useState("");
+  const [jurisdiction, setJurisdiction] = useState("all");
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSearch() {
+    if (!query.trim() || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const filters: any = {};
+      if (court) filters.court = court;
+      if (yearFrom) filters.year_from = parseInt(yearFrom);
+      if (yearTo) filters.year_to = parseInt(yearTo);
+      if (jurisdiction !== "all") filters.jurisdiction = jurisdiction;
+
+      const provider = localStorage.getItem("lexverify_provider") || "simulation";
+      const geminiKey = localStorage.getItem("lexverify_gemini_key") || "";
+
+      const res = await fetch(`${API_URL}/api/search`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "X-Model-Provider": provider,
+          "X-Gemini-API-Key": geminiKey,
+        },
+        body: JSON.stringify({
+          query,
+          filters: Object.keys(filters).length ? filters : undefined,
+          top_k: 10,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setResults(data.results || []);
+    } catch (e: any) {
+      setError(e.message || "Failed to search");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="content-area">
       <section className="panel-hero panel-hero-tight">
         <p className="panel-eyebrow">Corpus search</p>
         <h2>Search across the case library.</h2>
         <p>
-          This area is reserved for semantic and metadata search once the search
-          endpoint is connected to the interface.
+          Query documents semantically and filter using metadata values like court jurisdiction or publication year.
         </p>
       </section>
-      <div className="placeholder-state">
-        <div className="ph-icon">01</div>
-        <h3>Case Search</h3>
-        <p>Full-text and semantic search across the legal corpus via <code>POST /api/search</code>.</p>
+
+      <div className="query-box">
+        <div className="search-row">
+          <input
+            className="query-input"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search query (e.g. anticipatory bail guidelines)"
+            disabled={loading}
+          />
+          <button
+            className="submit-btn"
+            onClick={handleSearch}
+            disabled={loading || !query.trim()}
+          >
+            {loading ? "Searching..." : "Search"}
+          </button>
+        </div>
+
+        <div className="filter-grid">
+          <div className="filter-group">
+            <label className="filter-label">Court</label>
+            <input
+              className="filter-input"
+              value={court}
+              onChange={(e) => setCourt(e.target.value)}
+              placeholder="e.g. Supreme Court"
+              disabled={loading}
+            />
+          </div>
+          <div className="filter-group">
+            <label className="filter-label">From Year</label>
+            <input
+              className="filter-input"
+              type="number"
+              value={yearFrom}
+              onChange={(e) => setYearFrom(e.target.value)}
+              placeholder="e.g. 1980"
+              disabled={loading}
+            />
+          </div>
+          <div className="filter-group">
+            <label className="filter-label">To Year</label>
+            <input
+              className="filter-input"
+              type="number"
+              value={yearTo}
+              onChange={(e) => setYearTo(e.target.value)}
+              placeholder="e.g. 2024"
+              disabled={loading}
+            />
+          </div>
+          <div className="filter-group">
+            <label className="filter-label">Jurisdiction</label>
+            <select
+              className="filter-select"
+              value={jurisdiction}
+              onChange={(e) => setJurisdiction(e.target.value)}
+              disabled={loading}
+            >
+              <option value="all">All</option>
+              <option value="india">India</option>
+              <option value="usa">USA</option>
+              <option value="uk">UK</option>
+            </select>
+          </div>
+        </div>
       </div>
+
+      {error && (
+        <div className="error-banner">
+          <span className="error-icon">✕</span>
+          <span>{error}</span>
+        </div>
+      )}
+
+      {results.length > 0 ? (
+        <div className="results-list">
+          {results.map((res, i) => (
+            <div
+              key={i}
+              className="citation-card"
+              onClick={() => res.url && window.open(res.url, "_blank")}
+            >
+              <div className="citation-top">
+                <div>
+                  <p className="citation-name">{res.case_name || "Unknown Case Name"}</p>
+                  <p className="citation-meta">
+                    {res.court || "Unknown Court"} &middot; {res.year || "Unknown Year"} &middot; {res.source || "Unknown Source"}
+                  </p>
+                </div>
+                {res.relevance_score !== undefined && (
+                  <div className="relevance-wrap">
+                    <span className="badge badge-ok">Score: {Math.round(res.relevance_score * 100)}%</span>
+                  </div>
+                )}
+              </div>
+              {res.summary && <blockquote className="citation-para">{res.summary}</blockquote>}
+            </div>
+          ))}
+        </div>
+      ) : (
+        !loading && (
+          <div className="placeholder-state">
+            <div className="ph-icon">🔍</div>
+            <h3>No search results</h3>
+            <p>Perform a search query using the inputs above to find documents from the database.</p>
+          </div>
+        )
+      )}
     </div>
   );
 }
 
 function SimilarPanel() {
+  const [caseId, setCaseId] = useState("");
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleFindSimilar() {
+    if (loading || (!caseId.trim() && !text.trim())) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const provider = localStorage.getItem("lexverify_provider") || "simulation";
+      const geminiKey = localStorage.getItem("lexverify_gemini_key") || "";
+
+      const res = await fetch(`${API_URL}/api/similar-cases`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "X-Model-Provider": provider,
+          "X-Gemini-API-Key": geminiKey,
+        },
+        body: JSON.stringify({
+          case_id: caseId.trim() || undefined,
+          text: text.trim() || undefined,
+          top_k: 5,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setResults(data.similar_cases || []);
+    } catch (e: any) {
+      setError(e.message || "Failed to find similar cases");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="content-area">
       <section className="panel-hero panel-hero-tight">
         <p className="panel-eyebrow">Related matters</p>
         <h2>Trace neighboring precedents.</h2>
         <p>
-          Use this panel to pivot from one matter to comparable cases and supporting
-          authorities once the similarity endpoint is wired in.
+          Find cases that share semantic legal properties with a specific Case ID or custom text snippet.
         </p>
       </section>
-      <div className="placeholder-state">
-        <div className="ph-icon">02</div>
-        <h3>Similar Cases</h3>
-        <p>Find nearby precedents from a case ID or text snippet via <code>POST /api/similar-cases</code>.</p>
+
+      <div className="query-box">
+        <div className="similar-grid">
+          <div className="filter-group">
+            <label className="filter-label">Case ID</label>
+            <input
+              className="filter-input"
+              value={caseId}
+              onChange={(e) => setCaseId(e.target.value)}
+              placeholder="e.g. IK_2023_0001"
+              disabled={loading}
+            />
+          </div>
+          <div className="filter-group">
+            <label className="filter-label">Custom text snippet</label>
+            <input
+              className="filter-input"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Or paste a key paragraph to analyze semantic similarity..."
+              disabled={loading}
+            />
+          </div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button
+            className="submit-btn"
+            onClick={handleFindSimilar}
+            disabled={loading || (!caseId.trim() && !text.trim())}
+          >
+            {loading ? "Finding..." : "Find Similar"}
+          </button>
+        </div>
       </div>
+
+      {error && (
+        <div className="error-banner">
+          <span className="error-icon">✕</span>
+          <span>{error}</span>
+        </div>
+      )}
+
+      {results.length > 0 ? (
+        <div className="results-list">
+          {results.map((res, i) => (
+            <div
+              key={i}
+              className="citation-card"
+              onClick={() => res.url && window.open(res.url, "_blank")}
+            >
+              <div className="citation-top">
+                <div>
+                  <p className="citation-name">{res.case_name || "Unknown Case Name"}</p>
+                  <p className="citation-meta">
+                    {res.court || "Unknown Court"} &middot; {res.year || "Unknown Year"} &middot; {res.source || "Unknown Source"}
+                  </p>
+                </div>
+                {res.relevance_score !== undefined && (
+                  <div className="relevance-wrap">
+                    <span className="badge badge-ok">Similarity: {Math.round(res.relevance_score * 100)}%</span>
+                  </div>
+                )}
+              </div>
+              {res.summary && <blockquote className="citation-para">{res.summary}</blockquote>}
+            </div>
+          ))}
+        </div>
+      ) : (
+        !loading && (
+          <div className="placeholder-state">
+            <div className="ph-icon">🔗</div>
+            <h3>No similar cases found</h3>
+            <p>Enter a Case ID (e.g. <code>IK_2023_0001</code>) or enter some custom text above to view related judgments.</p>
+          </div>
+        )
+      )}
     </div>
   );
 }

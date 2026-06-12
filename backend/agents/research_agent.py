@@ -36,6 +36,8 @@ class ResearchAgent:
         query: str,
         jurisdiction: str = "all",
         top_k: int = 5,
+        provider: Optional[str] = None,
+        gemini_key: Optional[str] = None,
     ) -> List[Dict]:
         """
         Main retrieval method.
@@ -44,7 +46,7 @@ class ResearchAgent:
         logger.info(f"Embedding query and searching vector store (top_k={top_k})")
 
         # 1. Embed the query
-        query_vector = await self.embedder.embed(query)
+        query_vector = await self.embedder.embed(query, provider=provider, gemini_key=gemini_key)
 
         # 2. Search vector store
         raw_results = await self.vector_store.search(
@@ -92,9 +94,11 @@ class ResearchAgent:
         query: str,
         filters: Optional[Any] = None,
         top_k: int = 10,
+        provider: Optional[str] = None,
+        gemini_key: Optional[str] = None,
     ) -> List[Dict]:
         """Semantic + optional metadata-filtered search."""
-        query_vector = await self.embedder.embed(query)
+        query_vector = await self.embedder.embed(query, provider=provider, gemini_key=gemini_key)
         results = await self.vector_store.search(
             query_vector=query_vector,
             top_k=top_k,
@@ -108,6 +112,8 @@ class ResearchAgent:
         case_id: Optional[str] = None,
         text: Optional[str] = None,
         top_k: int = 5,
+        provider: Optional[str] = None,
+        gemini_key: Optional[str] = None,
     ) -> List[Dict]:
         """Find cases similar to a given case or text snippet."""
         if case_id:
@@ -116,7 +122,7 @@ class ResearchAgent:
                 text = doc.get("summary") or doc.get("text", "")
         if not text:
             return []
-        query_vector = await self.embedder.embed(text)
+        query_vector = await self.embedder.embed(text, provider=provider, gemini_key=gemini_key)
         results = await self.vector_store.search(query_vector=query_vector, top_k=top_k + 1)
         # Remove the source case itself if it appears
         return [r for r in results if r.get("doc_id") != case_id][:top_k]

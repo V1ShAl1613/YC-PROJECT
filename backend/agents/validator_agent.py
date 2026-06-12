@@ -1,16 +1,15 @@
 """
 ValidatorAgent
 Responsibility: The final verification gate.
-  1. Citation validation — confirm every cited doc_id exists in retrieved set
-  2. Cross-document consistency — flag contradictory legal assertions
-  3. Confidence scoring — multi-factor score (0.0–1.0)
-  4. Rejection — block responses with unverifiable or contradictory citations
+Checks citations, document completeness, contradiction risk, and confidence score.
+Supports Gemini, Ollama, and Simulation.
 """
 
 import logging
-from typing import Dict, List, Optional, Any
-
-import openai
+import os
+import json
+from typing import Dict, List, Optional
+import httpx
 
 from api.models import ValidationResult
 from verification.citation_guard import audit_citations
@@ -41,14 +40,11 @@ CITATIONS USED:
 
 
 class ValidatorAgent:
-    """
-    Stage 3 Agent: Verification Gate
-    Enforces the zero-hallucination contract.
-    """
-
     def __init__(self):
-        self.client = openai.AsyncOpenAI()
-        self.model = "gpt-4o"
+        self.provider = os.getenv("MODEL_PROVIDER", "simulation").lower()
+        self.gemini_key = os.getenv("GEMINI_API_KEY", "")
+        self.ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+        self.ollama_model = os.getenv("OLLAMA_LLM_MODEL", "llama3")
         logger.info("ValidatorAgent initialized")
 
     async def validate(
@@ -56,10 +52,9 @@ class ValidatorAgent:
         answer: str,
         citations: List[Dict],
         source_documents: List[Dict],
+        provider: Optional[str] = None,
+        gemini_key: Optional[str] = None,
     ) -> ValidationResult:
-        """
-        Returns ValidationResult with pass/fail flags and confidence score.
-        """
         audit = audit_citations(
             answer=answer,
             citations=citations,
@@ -68,12 +63,14 @@ class ValidatorAgent:
         rejection_reasons: List[str] = list(audit.rejection_reasons)
         citation_verified = audit.citation_verified
 
-        # ── Check 4: Cross-document consistency (LLM-based) ───────────────
         cross_consistent = True
-        consistency_issues: List[str] = []
-
         try:
-            consistency = await self._check_consistency(answer, citations)
+            consistency = await self._check_consistency(
+                answer,
+                citations,
+                provider=provider,
+                gemini_key=gemini_key,
+            )
             if consistency:
                 if consistency.get("contradictions_found"):
                     cross_consistent = False
@@ -81,13 +78,10 @@ class ValidatorAgent:
                 if consistency.get("out_of_scope_claims"):
                     cross_consistent = False
                     rejection_reasons.append("Answer contains claims beyond cited documents")
-                consistency_issues = consistency.get("issues", [])
-                rejection_reasons.extend(consistency_issues)
+                rejection_reasons.extend(consistency.get("issues", []))
         except Exception as e:
             logger.warning(f"Consistency check failed (non-blocking): {e}")
-            # Don't fail hard on LLM call failure in validator
 
-        # ── Confidence Score Calculation ──────────────────────────────────
         score = self._compute_confidence(
             citations=citations,
             citation_verified=citation_verified,
@@ -102,12 +96,6 @@ class ValidatorAgent:
             else "NONE"
         )
 
-        logger.info(
-            f"Validation result: verified={citation_verified}, "
-            f"consistent={cross_consistent}, score={score:.2f}, label={label}, "
-            f"issues={len(rejection_reasons)}"
-        )
-
         return ValidationResult(
             citation_verified=citation_verified,
             cross_consistent=cross_consistent,
@@ -120,31 +108,68 @@ class ValidatorAgent:
         self,
         answer: str,
         citations: List[Dict],
+        provider: Optional[str] = None,
+        gemini_key: Optional[str] = None,
     ) -> Optional[Dict]:
-        """LLM-powered consistency checker."""
-        import json
+        """Consistency check routed to active provider."""
+        active_provider = provider.lower() if provider else self.provider
+        active_gemini_key = gemini_key if gemini_key else self.gemini_key
+
+        if active_provider == "simulation" or (active_provider == "gemini" and not active_gemini_key):
+            return {
+                "all_claims_cited": True,
+                "contradictions_found": False,
+                "out_of_scope_claims": False,
+                "issues": []
+            }
 
         citations_text = "\n".join(
             f"[{c['id']}] {c.get('case_name')} ({c.get('year')}): {c.get('paragraph', '')[:500]}"
             for c in citations
         )
-
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            temperature=0.0,
-            max_tokens=512,
-            response_format={"type": "json_object"},
-            messages=[
-                {
-                    "role": "user",
-                    "content": CONSISTENCY_PROMPT.format(
-                        answer=answer[:2000],
-                        citations=citations_text[:2000],
-                    ),
-                }
-            ],
+        prompt = CONSISTENCY_PROMPT.format(
+            answer=answer[:2000],
+            citations=citations_text[:2000],
         )
-        return json.loads(response.choices[0].message.content)
+
+        if active_provider == "gemini":
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={active_gemini_key}"
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    url,
+                    json={
+                        "contents": [{"parts": [{"text": prompt}]}],
+                        "generationConfig": {
+                            "responseMimeType": "application/json"
+                        }
+                    }
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
+                return json.loads(raw_text)
+
+        elif active_provider == "ollama":
+            url = f"{self.ollama_host}/api/chat"
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    url,
+                    json={
+                        "model": self.ollama_model,
+                        "messages": [
+                            {"role": "user", "content": prompt}
+                        ],
+                        "stream": False,
+                        "options": {"temperature": 0.0},
+                        "format": "json"
+                    }
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                raw_text = data["message"]["content"]
+                return json.loads(raw_text)
+
+        return None
 
     def _compute_confidence(
         self,
@@ -153,32 +178,19 @@ class ValidatorAgent:
         cross_consistent: bool,
         rejection_reasons: List[str],
     ) -> float:
-        """
-        Multi-factor confidence score:
-        - Base: average relevance score of citations (40%)
-        - Citation verified: +30%
-        - Cross-document consistent: +20%
-        - Penalty per rejection reason: -10% each
-        """
         if not citations:
             return 0.0
 
-        # Factor 1: Average relevance score
         scores = [c.get("relevance_score", 0.5) for c in citations]
         avg_relevance = sum(scores) / len(scores)
         base = avg_relevance * 0.4
 
-        # Factor 2: Citation verification
         base += 0.30 if citation_verified else 0.0
-
-        # Factor 3: Consistency
         base += 0.20 if cross_consistent else 0.0
 
-        # Factor 4: Citation count bonus (more citations = higher confidence, up to +10%)
         count_bonus = min(len(citations) * 0.02, 0.10)
         base += count_bonus
 
-        # Factor 5: Penalty for issues
         penalty = len(rejection_reasons) * 0.10
         base -= penalty
 
