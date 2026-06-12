@@ -1,5 +1,5 @@
-// ─── Sidebar ─────────────────────────────────────────────────────────────────
 "use client";
+import { useState, useEffect } from "react";
 import type { Panel } from "@/app/page";
 
 const NAV_ITEMS: { id: Panel; icon: string; label: string }[] = [
@@ -21,6 +21,64 @@ function Icon({ name }: { name: string }) {
 }
 
 export default function Sidebar({ activePanel, onNavigate }: { activePanel: Panel; onNavigate: (p: Panel) => void }) {
+  const [mounted, setMounted] = useState(false);
+  const [provider, setProvider] = useState("simulation");
+  const [geminiKey, setGeminiKey] = useState("");
+  const [ollamaStatus, setOllamaStatus] = useState<"idle" | "checking" | "connected" | "disconnected">("idle");
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [ollamaError, setOllamaError] = useState<string | null>(null);
+
+  const checkOllamaConnection = async () => {
+    setOllamaStatus("checking");
+    setOllamaError(null);
+    try {
+      const apiHost = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const res = await fetch(`${apiHost}/api/check-ollama`);
+      if (!res.ok) {
+        throw new Error(`Server returned HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      if (data.status === "connected") {
+        setOllamaStatus("connected");
+        setOllamaModels(data.models || []);
+      } else {
+        setOllamaStatus("disconnected");
+        setOllamaError(data.error || "Could not reach Ollama");
+      }
+    } catch (err: any) {
+      setOllamaStatus("disconnected");
+      setOllamaError(err.message || "Failed to contact backend verification api");
+    }
+  };
+
+  useEffect(() => {
+    setMounted(true);
+    const savedProvider = localStorage.getItem("lexverify_provider") || "simulation";
+    setProvider(savedProvider);
+    setGeminiKey(localStorage.getItem("lexverify_gemini_key") || "");
+    
+    // Auto-check Ollama if provider is ollama on load
+    if (savedProvider === "ollama") {
+      // Small timeout to let mount complete
+      setTimeout(checkOllamaConnection, 100);
+    }
+  }, []);
+
+  const handleProviderChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const p = e.target.value;
+    setProvider(p);
+    localStorage.setItem("lexverify_provider", p);
+    if (p === "ollama") {
+      checkOllamaConnection();
+    }
+  };
+
+  const handleKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const k = e.target.value;
+    setGeminiKey(k);
+    localStorage.setItem("lexverify_gemini_key", k);
+  };
+
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">
@@ -54,6 +112,94 @@ export default function Sidebar({ activePanel, onNavigate }: { activePanel: Pane
             {item.label}
           </button>
         ))}
+
+        <div className="nav-section-label" style={{ marginTop: "1.25rem" }}>Model Config</div>
+        {mounted && (
+          <div className="settings-section">
+            <div className="settings-input-group">
+              <label className="settings-input-label">Provider</label>
+              <select className="settings-select" value={provider} onChange={handleProviderChange}>
+                <option value="simulation">Simulation (Offline)</option>
+                <option value="gemini">Gemini (Cloud)</option>
+                <option value="ollama">Ollama (Local)</option>
+              </select>
+            </div>
+            
+            {provider === "gemini" && (
+              <div className="settings-input-group">
+                <label className="settings-input-label">Gemini API Key</label>
+                <input
+                  type="password"
+                  className="settings-input"
+                  placeholder="AIzaSy..."
+                  value={geminiKey}
+                  onChange={handleKeyChange}
+                />
+              </div>
+            )}
+
+            {provider === "ollama" && (
+              <>
+                <div className="status-indicator">
+                  <div className={`status-dot ${ollamaStatus === "checking" ? "checking" : ollamaStatus === "connected" ? "connected" : "disconnected"}`} />
+                  <span className="status-text">
+                    {ollamaStatus === "checking"
+                      ? "Checking connection..."
+                      : ollamaStatus === "connected"
+                      ? "Connected"
+                      : "Offline"}
+                  </span>
+                </div>
+                {ollamaStatus === "connected" && ollamaModels.length > 0 && (
+                  <div className="available-models">
+                    Models: {ollamaModels.join(", ")}
+                  </div>
+                )}
+                {ollamaStatus === "disconnected" && ollamaError && (
+                  <div className="available-models" style={{ color: "#8a4747" }}>
+                    {ollamaError}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="connect-btn"
+                  onClick={checkOllamaConnection}
+                  disabled={ollamaStatus === "checking"}
+                >
+                  {ollamaStatus === "checking" ? "Verifying..." : "Connect / Retry"}
+                </button>
+
+                <div className="ollama-guide">
+                  <span className="ollama-guide-title">Local Setup steps</span>
+                  <ol className="ollama-guide-steps">
+                    <li>
+                      Download and install from{" "}
+                      <a
+                        href="https://ollama.com"
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ textDecoration: "underline", color: "var(--accent-deep)", fontWeight: 700 }}
+                      >
+                        ollama.com
+                      </a>
+                    </li>
+                    <li>
+                      Launch the Ollama desktop app.
+                    </li>
+                    <li>
+                      Pull models via your terminal:
+                      <code className="ollama-guide-code">
+                        ollama run llama3{"\n"}
+                        ollama pull nomic-embed-text
+                      </code>
+                    </li>
+                    <li>Click <strong>Connect / Retry</strong> above to verify.</li>
+                  </ol>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </nav>
 
       <div className="sidebar-stats">

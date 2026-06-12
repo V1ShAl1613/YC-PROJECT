@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -61,17 +61,23 @@ async def request_logger(request: Request, call_next):
 
 
 @app.post("/api/query", response_model=QueryResponse)
-async def legal_query(request: QueryRequest):
+async def legal_query(
+    request: QueryRequest,
+    x_model_provider: Optional[str] = Header(None),
+    x_gemini_api_key: Optional[str] = Header(None),
+):
     """
     Primary endpoint: accepts a legal question, runs multi-agent pipeline,
     returns citation-backed answer or explicit fallback if no verified source found.
     """
-    logger.info(f"Legal query received: {request.query[:80]}...")
+    logger.info(f"Legal query received: {request.query[:80]}... provider={x_model_provider}")
     try:
         result = await orchestrator.run(
             query=request.query,
             jurisdiction=request.jurisdiction,
             top_k=request.top_k,
+            provider=x_model_provider,
+            gemini_key=x_gemini_api_key,
         )
         return result
     except Exception as e:
@@ -80,13 +86,19 @@ async def legal_query(request: QueryRequest):
 
 
 @app.post("/api/search")
-async def search_cases(request: SearchRequest):
+async def search_cases(
+    request: SearchRequest,
+    x_model_provider: Optional[str] = Header(None),
+    x_gemini_api_key: Optional[str] = Header(None),
+):
     """Full-text + semantic search across the legal corpus."""
     try:
         results = await orchestrator.search(
             query=request.query,
             filters=request.filters,
             top_k=request.top_k,
+            provider=x_model_provider,
+            gemini_key=x_gemini_api_key,
         )
         return {"results": results, "count": len(results)}
     except Exception as e:
@@ -94,13 +106,19 @@ async def search_cases(request: SearchRequest):
 
 
 @app.post("/api/similar-cases")
-async def similar_cases(request: CaseSimilarityRequest):
+async def similar_cases(
+    request: CaseSimilarityRequest,
+    x_model_provider: Optional[str] = Header(None),
+    x_gemini_api_key: Optional[str] = Header(None),
+):
     """Find cases semantically similar to a given case ID or text snippet."""
     try:
         results = await orchestrator.find_similar(
             case_id=request.case_id,
             text=request.text,
             top_k=request.top_k,
+            provider=x_model_provider,
+            gemini_key=x_gemini_api_key,
         )
         return {"similar_cases": results}
     except Exception as e:
@@ -125,6 +143,24 @@ async def get_case(case_id: str):
 async def system_stats():
     """Returns corpus stats, model info, and system health metrics."""
     return await orchestrator.get_stats()
+
+
+@app.get("/api/check-ollama")
+async def check_ollama():
+    """Checks if Ollama is running and lists available models."""
+    import httpx
+    ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            resp = await client.get(f"{ollama_host}/api/tags")
+            if resp.status_code == 200:
+                data = resp.json()
+                models = [m["name"] for m in data.get("models", [])]
+                return {"status": "connected", "models": models, "host": ollama_host}
+    except Exception as e:
+        logger.warning(f"Ollama connection check failed: {e}")
+    return {"status": "disconnected", "error": "Could not connect to Ollama", "host": ollama_host}
+
 
 
 @app.exception_handler(404)

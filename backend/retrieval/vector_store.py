@@ -45,8 +45,8 @@ class VectorStore:
                     f"{len(self._id_map)} docs"
                 )
             else:
-                self._index = faiss.IndexFlatIP(EMBEDDING_DIM)  # Inner Product = cosine on L2-normalized vecs
-                logger.info("New FAISS index initialized (empty)")
+                self._index = None
+                logger.info("New FAISS index initialized (dynamic/empty)")
 
         except ImportError:
             logger.warning("FAISS not installed — using in-memory fallback (numpy cosine search)")
@@ -55,11 +55,17 @@ class VectorStore:
 
     async def add(self, doc_id: str, vector: List[float], metadata: Dict):
         """Add a document vector to the index."""
+        dim = len(vector)
         vec = np.array([vector], dtype=np.float32)
         # L2-normalize for cosine similarity via inner product
         vec = vec / (np.linalg.norm(vec, axis=1, keepdims=True) + 1e-10)
 
         if self._faiss:
+            if self._index is None:
+                self._index = self._faiss.IndexFlatIP(dim)
+            elif hasattr(self._index, "d") and self._index.d != dim:
+                logger.warning(f"Re-creating FAISS index due to dimension change from {self._index.d} to {dim}")
+                self._index = self._faiss.IndexFlatIP(dim)
             self._index.add(vec)
         else:
             self._vectors.append(vec[0])
@@ -79,10 +85,14 @@ class VectorStore:
             logger.warning("Vector store is empty")
             return self._demo_results(top_k)  # return demo data in dev mode
 
+        dim = len(query_vector)
         q = np.array([query_vector], dtype=np.float32)
         q = q / (np.linalg.norm(q, axis=1, keepdims=True) + 1e-10)
 
-        if self._faiss and self._index.ntotal > 0:
+        if self._faiss and self._index is not None and self._index.ntotal > 0:
+            if self._index.d != dim:
+                logger.warning(f"Dimension mismatch: Index expects {self._index.d}, query got {dim}")
+                return []
             scores, indices = self._index.search(q, min(top_k * 2, self._index.ntotal))
             results = []
             for score, idx in zip(scores[0], indices[0]):
@@ -100,6 +110,9 @@ class VectorStore:
             return results[:top_k]
         else:
             # Numpy fallback
+            if self._vectors and len(self._vectors[0]) != dim:
+                logger.warning(f"Dimension mismatch in numpy search: Index expects {len(self._vectors[0])}, query got {dim}")
+                return []
             return self._numpy_search(q[0], top_k, jurisdiction)
 
     def _numpy_search(

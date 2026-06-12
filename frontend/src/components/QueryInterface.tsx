@@ -59,9 +59,16 @@ export default function QueryInterface() {
         await stageDelay(700);
       })();
 
+      const provider = localStorage.getItem("lexverify_provider") || "simulation";
+      const geminiKey = localStorage.getItem("lexverify_gemini_key") || "";
+
       const res = await fetch(`${API_URL}/api/query`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "X-Model-Provider": provider,
+          "X-Gemini-API-Key": geminiKey,
+        },
         body: JSON.stringify({ query: q, jurisdiction, top_k: 5 }),
       });
 

@@ -53,6 +53,8 @@ class LegalAgentOrchestrator:
         query: str,
         jurisdiction: str = "all",
         top_k: int = 5,
+        provider: Optional[str] = None,
+        gemini_key: Optional[str] = None,
     ) -> QueryResponse:
         start = time.time()
         trace: List[str] = []
@@ -65,6 +67,8 @@ class LegalAgentOrchestrator:
                 query=query,
                 jurisdiction=jurisdiction,
                 top_k=top_k,
+                provider=provider,
+                gemini_key=gemini_key,
             )
 
             if not documents:
@@ -82,6 +86,8 @@ class LegalAgentOrchestrator:
             analysis = await self.analyst_agent.analyze(
                 query=query,
                 documents=documents,
+                provider=provider,
+                gemini_key=gemini_key,
             )
 
             if not analysis or analysis.get("fallback"):
@@ -100,6 +106,8 @@ class LegalAgentOrchestrator:
                 answer=analysis["answer"],
                 citations=analysis["citations"],
                 source_documents=documents,
+                provider=provider,
+                gemini_key=gemini_key,
             )
 
             if not validation_result.citation_verified or validation_result.confidence_score < 0.4:
@@ -148,16 +156,32 @@ class LegalAgentOrchestrator:
         query: str,
         filters: Optional[Any] = None,
         top_k: int = 10,
+        provider: Optional[str] = None,
+        gemini_key: Optional[str] = None,
     ) -> List[Dict]:
-        return await self.research_agent.search(query=query, filters=filters, top_k=top_k)
+        return await self.research_agent.search(
+            query=query,
+            filters=filters,
+            top_k=top_k,
+            provider=provider,
+            gemini_key=gemini_key,
+        )
 
     async def find_similar(
         self,
         case_id: Optional[str] = None,
         text: Optional[str] = None,
         top_k: int = 5,
+        provider: Optional[str] = None,
+        gemini_key: Optional[str] = None,
     ) -> List[Dict]:
-        return await self.research_agent.find_similar(case_id=case_id, text=text, top_k=top_k)
+        return await self.research_agent.find_similar(
+            case_id=case_id,
+            text=text,
+            top_k=top_k,
+            provider=provider,
+            gemini_key=gemini_key,
+        )
 
     async def get_case(self, case_id: str) -> Optional[Dict]:
         return await self.research_agent.get_case(case_id)
