@@ -32,7 +32,7 @@
 }
 
 html {
-  font-size: 16px;
+  font-size: 17px;
   scroll-behavior: smooth;
 }
 
@@ -624,10 +624,12 @@ code {
 }
 
 @keyframes pulse {
+
   0%,
   100% {
     box-shadow: 0 0 0 0 rgba(93, 59, 34, 0.18);
   }
+
   50% {
     box-shadow: 0 0 0 12px rgba(93, 59, 34, 0);
   }
@@ -717,7 +719,7 @@ code {
   line-height: 1.9;
 }
 
-.answer-body p + p {
+.answer-body p+p {
   margin-top: 1rem;
 }
 
