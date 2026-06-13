@@ -63,7 +63,7 @@ function AgentsPanel() {
         <p>
           This is not a generic chatbot. It is a verification-first legal AI agent:
           research retrieves, analysis drafts only from evidence, and validation decides
-          whether anything is safe enough to return.
+          whether anything is safe enough to return. Powered by a custom fine-tuned local legal LLM.
         </p>
       </section>
       <div className="agents-grid">

@@ -66,6 +66,9 @@ class VectorStore:
             elif hasattr(self._index, "d") and self._index.d != dim:
                 logger.warning(f"Re-creating FAISS index due to dimension change from {self._index.d} to {dim}")
                 self._index = self._faiss.IndexFlatIP(dim)
+                # We should clear the old mapping if index dimension changes to prevent mismatches
+                self._id_map = []
+                self._doc_map = {}
             self._index.add(vec)
         else:
             self._vectors.append(vec[0])

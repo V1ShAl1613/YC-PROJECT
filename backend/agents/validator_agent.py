@@ -41,10 +41,10 @@ CITATIONS USED:
 
 class ValidatorAgent:
     def __init__(self):
-        self.provider = os.getenv("MODEL_PROVIDER", "simulation").lower()
+        self.provider = os.getenv("MODEL_PROVIDER", "ollama").lower()
         self.gemini_key = os.getenv("GEMINI_API_KEY", "")
         self.ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
-        self.ollama_model = os.getenv("OLLAMA_LLM_MODEL", "llama3")
+        self.ollama_model = os.getenv("OLLAMA_LLM_MODEL", "lexverify-legal")
         logger.info("ValidatorAgent initialized")
 
     async def validate(

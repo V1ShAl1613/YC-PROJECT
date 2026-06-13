@@ -119,6 +119,7 @@ export function ConfidenceRing({ score, label }: { score: number; label: string 
 
 // ─── Topbar ──────────────────────────────────────────────────────────────────
 import type { Panel } from "@/app/page";
+import { useEffect, useState } from "react";
 
 const TITLES: Record<Panel, string> = {
   query:   "Verification-First Legal AI",
@@ -128,16 +129,47 @@ const TITLES: Record<Panel, string> = {
 };
 
 export function Topbar({ activePanel }: { activePanel: Panel }) {
+  const [modelInfo, setModelInfo] = useState<string>("Loading model status...");
+
+  useEffect(() => {
+    const fetchModelStatus = async () => {
+      try {
+        const apiHost = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const res = await fetch(`${apiHost}/api/model-status`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.provider === "ollama") {
+            setModelInfo(`Local LLM: ${data.llm_model} ${data.status === "loaded" ? "🟢" : "🔴"}`);
+          } else if (data.provider === "gemini") {
+            setModelInfo(`Cloud: ${data.llm_model}`);
+          } else {
+            setModelInfo("Simulation Mode (Offline)");
+          }
+        }
+      } catch (e) {
+        setModelInfo("Model status unavailable");
+      }
+    };
+    fetchModelStatus();
+    const interval = setInterval(fetchModelStatus, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <header className="topbar">
       <div>
         <p className="topbar-title">{TITLES[activePanel]}</p>
         <p className="topbar-meta">Production-grade legal intelligence · Citations required · Trust gated by verification</p>
       </div>
-      <span className="badge badge-ok" style={{ fontSize: "11px" }}>
-        <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#0f6e56", marginRight: 5 }} />
-        Zero hallucination
-      </span>
+      <div style={{ display: "flex", gap: "10px" }}>
+        <span className="badge" style={{ fontSize: "11px", background: "#f0f0f0", color: "#333", border: "1px solid #ddd" }}>
+          {modelInfo}
+        </span>
+        <span className="badge badge-ok" style={{ fontSize: "11px" }}>
+          <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#0f6e56", marginRight: 5 }} />
+          Zero hallucination
+        </span>
+      </div>
     </header>
   );
 }

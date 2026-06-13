@@ -148,11 +148,21 @@ export default function Sidebar({ activePanel, onNavigate }: { activePanel: Pane
                       : ollamaStatus === "connected"
                       ? "Connected"
                       : "Offline"}
-                  </span>
                 </div>
                 {ollamaStatus === "connected" && ollamaModels.length > 0 && (
-                  <div className="available-models">
-                    Models: {ollamaModels.join(", ")}
+                  <div className="settings-input-group" style={{ marginTop: "0.5rem" }}>
+                    <label className="settings-input-label">Ollama Model</label>
+                    <select 
+                      className="settings-select"
+                      onChange={(e) => localStorage.setItem("lexverify_ollama_model", e.target.value)}
+                      defaultValue={localStorage.getItem("lexverify_ollama_model") || (ollamaModels.includes("lexverify-legal") || ollamaModels.includes("lexverify-legal:latest") ? "lexverify-legal" : ollamaModels[0])}
+                    >
+                      {ollamaModels.map(m => (
+                        <option key={m} value={m}>
+                          {m === "lexverify-legal" || m === "lexverify-legal:latest" ? "lexverify-legal (Recommended)" : m}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 )}
                 {ollamaStatus === "disconnected" && ollamaError && (

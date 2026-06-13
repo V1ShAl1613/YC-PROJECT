@@ -131,13 +131,33 @@ cd legal-ai
 
 # Create environment file
 cat > .env << EOF
-OPENAI_API_KEY=sk-...
-COURTLISTENER_API_TOKEN=your_token_here
-INDIAN_KANOON_API_TOKEN=your_token_here
+# ── Local LLM (Ollama) ───────────────────────────────────────────────────────
+MODEL_PROVIDER=ollama
+OLLAMA_HOST=http://localhost:11434
+OLLAMA_LLM_MODEL=lexverify-legal
+OLLAMA_EMBED_MODEL=nomic-embed-text
+
+# ── Cloud LLM (Gemini) ───────────────────────────────────────────────────────
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_LLM_MODEL=gemini-2.5-flash
+GEMINI_EMBED_MODEL=text-embedding-004
+
+DATABASE_URL=sqlite:///data/legal.db
 EOF
 ```
 
-### 2. Start with Docker Compose
+### 2. Set up Local LLM (Ollama)
+
+LexVerify is pre-configured to use a custom fine-tuned Llama 3.2 model for legal reasoning and nomic-embed-text for embeddings.
+
+```powershell
+# Run the setup script to install models and create the custom LexVerify LLM
+.\scripts\setup_local_llm.ps1
+```
+
+*(Note: To fine-tune your own model from the project corpus, run `python scripts/generate_training_data.py` and use the provided `scripts/LexVerify_FineTune.ipynb` Google Colab notebook).*
+
+### 3. Start with Docker Compose
 
 ```bash
 docker-compose up --build

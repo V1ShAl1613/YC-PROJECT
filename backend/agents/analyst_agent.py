@@ -53,10 +53,10 @@ If the documents do not contain sufficient information to answer, output: {{"fal
 
 class LegalAnalystAgent:
     def __init__(self):
-        self.provider = os.getenv("MODEL_PROVIDER", "simulation").lower()
+        self.provider = os.getenv("MODEL_PROVIDER", "ollama").lower()
         self.gemini_key = os.getenv("GEMINI_API_KEY", "")
         self.ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
-        self.ollama_model = os.getenv("OLLAMA_LLM_MODEL", "llama3")
+        self.ollama_model = os.getenv("OLLAMA_LLM_MODEL", "lexverify-legal")
         logger.info(f"LegalAnalystAgent initialized: provider={self.provider}")
 
     async def analyze(

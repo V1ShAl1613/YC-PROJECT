@@ -150,18 +150,72 @@ async def check_ollama():
     """Checks if Ollama is running and lists available models."""
     import httpx
     ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+    custom_model = os.getenv("OLLAMA_LLM_MODEL", "lexverify-legal")
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
             resp = await client.get(f"{ollama_host}/api/tags")
             if resp.status_code == 200:
                 data = resp.json()
                 models = [m["name"] for m in data.get("models", [])]
-                return {"status": "connected", "models": models, "host": ollama_host}
+                return {
+                    "status": "connected", 
+                    "models": models, 
+                    "host": ollama_host,
+                    "has_custom_model": custom_model in models or f"{custom_model}:latest" in models
+                }
     except Exception as e:
         logger.warning(f"Ollama connection check failed: {e}")
-    return {"status": "disconnected", "error": "Could not connect to Ollama", "host": ollama_host}
+    return {
+        "status": "disconnected", 
+        "error": "Could not connect to Ollama", 
+        "host": ollama_host,
+        "has_custom_model": False
+    }
 
+@app.get("/api/model-status")
+async def model_status():
+    """Returns the current active model provider and its status."""
+    import httpx
+    provider = os.getenv("MODEL_PROVIDER", "ollama").lower()
+    
+    status_data = {
+        "provider": provider,
+        "llm_model": None,
+        "embed_model": None,
+        "status": "unknown"
+    }
 
+    if provider == "ollama":
+        status_data["llm_model"] = os.getenv("OLLAMA_LLM_MODEL", "lexverify-legal")
+        status_data["embed_model"] = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+        
+        # Check if Ollama is running and has the models
+        ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                resp = await client.get(f"{ollama_host}/api/tags")
+                if resp.status_code == 200:
+                    models = [m["name"] for m in resp.json().get("models", [])]
+                    if status_data["llm_model"] in models or f"{status_data['llm_model']}:latest" in models:
+                        status_data["status"] = "loaded"
+                    else:
+                        status_data["status"] = "model_not_found"
+                else:
+                    status_data["status"] = "error"
+        except:
+            status_data["status"] = "disconnected"
+
+    elif provider == "gemini":
+        status_data["llm_model"] = os.getenv("GEMINI_LLM_MODEL", "gemini-2.5-flash")
+        status_data["embed_model"] = os.getenv("GEMINI_EMBED_MODEL", "text-embedding-004")
+        status_data["status"] = "configured" if os.getenv("GEMINI_API_KEY") else "missing_key"
+        
+    else:
+        status_data["llm_model"] = "simulation (mock)"
+        status_data["embed_model"] = "simulation (mock)"
+        status_data["status"] = "active"
+
+    return status_data
 
 @app.exception_handler(404)
 async def not_found(request: Request, exc):
